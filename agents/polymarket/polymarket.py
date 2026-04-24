@@ -14,21 +14,16 @@ from web3.constants import MAX_INT
 from web3.middleware import geth_poa_middleware
 
 import httpx
-from py_clob_client.client import ClobClient
-from py_clob_client.clob_types import ApiCreds
-from py_clob_client.constants import AMOY, POLYGON
-from py_order_utils.builders import OrderBuilder
-from py_order_utils.model import OrderData
-from py_order_utils.signer import Signer
-from py_clob_client.clob_types import (
-    OrderArgs,
-    MarketOrderArgs,
-    OrderType,
-    OrderBookSummary,
-)
-from py_clob_client.order_builder.constants import BUY
+
+# py_clob_client / py_order_utils were removed as part of the pivot to
+# domestic (Japanese) exchanges. Trading-side methods below now raise
+# NotImplementedError; use agents.api_clients.DomesticClient for trading.
 
 from agents.utils.objects import SimpleMarket, SimpleEvent
+
+_TRADING_DISABLED_MSG = (
+    "Polymarket trading disabled; see agents/api_clients/domestic_client.py"
+)
 
 load_dotenv()
 
@@ -66,16 +61,10 @@ class Polymarket:
             address=self.ctf_address, abi=self.erc1155_set_approval
         )
 
-        self._init_api_keys()
         self._init_approvals(False)
 
     def _init_api_keys(self) -> None:
-        self.client = ClobClient(
-            self.clob_url, key=self.private_key, chain_id=self.chain_id
-        )
-        self.credentials = self.client.create_or_derive_api_creds()
-        self.client.set_api_creds(self.credentials)
-        # print(self.credentials)
+        raise NotImplementedError(_TRADING_DISABLED_MSG)
 
     def _init_approvals(self, run: bool = False) -> None:
         if not run:
@@ -287,69 +276,26 @@ class Polymarket:
         return self.filter_events_for_trading(all_events)
 
     def get_sampling_simplified_markets(self) -> "list[SimpleEvent]":
-        markets = []
-        raw_sampling_simplified_markets = self.client.get_sampling_simplified_markets()
-        for raw_market in raw_sampling_simplified_markets["data"]:
-            token_one_id = raw_market["tokens"][0]["token_id"]
-            market = self.get_market(token_one_id)
-            markets.append(market)
-        return markets
+        raise NotImplementedError(_TRADING_DISABLED_MSG)
 
-    def get_orderbook(self, token_id: str) -> OrderBookSummary:
-        return self.client.get_order_book(token_id)
+    def get_orderbook(self, token_id: str):
+        raise NotImplementedError(_TRADING_DISABLED_MSG)
 
     def get_orderbook_price(self, token_id: str) -> float:
-        return float(self.client.get_price(token_id))
+        raise NotImplementedError(_TRADING_DISABLED_MSG)
 
     def get_address_for_private_key(self):
         account = self.w3.eth.account.from_key(str(self.private_key))
         return account.address
 
-    def build_order(
-        self,
-        market_token: str,
-        amount: float,
-        nonce: str = str(round(time.time())),  # for cancellations
-        side: str = "BUY",
-        expiration: str = "0",  # timestamp after which order expires
-    ):
-        signer = Signer(self.private_key)
-        builder = OrderBuilder(self.exchange_address, self.chain_id, signer)
+    def build_order(self, *args, **kwargs):
+        raise NotImplementedError(_TRADING_DISABLED_MSG)
 
-        buy = side == "BUY"
-        side = 0 if buy else 1
-        maker_amount = amount if buy else 0
-        taker_amount = amount if not buy else 0
-        order_data = OrderData(
-            maker=self.get_address_for_private_key(),
-            tokenId=market_token,
-            makerAmount=maker_amount,
-            takerAmount=taker_amount,
-            feeRateBps="1",
-            nonce=nonce,
-            side=side,
-            expiration=expiration,
-        )
-        order = builder.build_signed_order(order_data)
-        return order
+    def execute_order(self, *args, **kwargs) -> str:
+        raise NotImplementedError(_TRADING_DISABLED_MSG)
 
-    def execute_order(self, price, size, side, token_id) -> str:
-        return self.client.create_and_post_order(
-            OrderArgs(price=price, size=size, side=side, token_id=token_id)
-        )
-
-    def execute_market_order(self, market, amount) -> str:
-        token_id = ast.literal_eval(market[0].dict()["metadata"]["clob_token_ids"])[1]
-        order_args = MarketOrderArgs(
-            token_id=token_id,
-            amount=amount,
-        )
-        signed_order = self.client.create_market_order(order_args)
-        print("Execute market order... signed_order ", signed_order)
-        resp = self.client.post_order(signed_order, orderType=OrderType.FOK)
-        print(resp)
-        print("Done!")
-        return resp
+    def execute_market_order(self, *args, **kwargs) -> str:
+        raise NotImplementedError(_TRADING_DISABLED_MSG)
 
     def get_usdc_balance(self) -> float:
         balance_res = self.usdc.functions.balanceOf(
@@ -359,30 +305,7 @@ class Polymarket:
 
 
 def test():
-    host = "https://clob.polymarket.com"
-    key = os.getenv("POLYGON_WALLET_PRIVATE_KEY")
-    print(key)
-    chain_id = POLYGON
-
-    # Create CLOB client and get/set API credentials
-    client = ClobClient(host, key=key, chain_id=chain_id)
-    client.set_api_creds(client.create_or_derive_api_creds())
-
-    creds = ApiCreds(
-        api_key=os.getenv("CLOB_API_KEY"),
-        api_secret=os.getenv("CLOB_SECRET"),
-        api_passphrase=os.getenv("CLOB_PASS_PHRASE"),
-    )
-    chain_id = AMOY
-    client = ClobClient(host, key=key, chain_id=chain_id, creds=creds)
-
-    print(client.get_markets())
-    print(client.get_simplified_markets())
-    print(client.get_sampling_markets())
-    print(client.get_sampling_simplified_markets())
-    print(client.get_market("condition_id"))
-
-    print("Done!")
+    raise NotImplementedError(_TRADING_DISABLED_MSG)
 
 
 def gamma():
@@ -431,51 +354,4 @@ def main():
 
 
 if __name__ == "__main__":
-    load_dotenv()
-
-    p = Polymarket()
-
-    # k = p.get_api_key()
-    # m = p.get_sampling_simplified_markets()
-
-    # print(m)
-    # m = p.get_market('11015470973684177829729219287262166995141465048508201953575582100565462316088')
-
-    # t = m[0]['token_id']
-    # o = p.get_orderbook(t)
-    # pdb.set_trace()
-
-    """
-    
-    (Pdb) pprint(o)
-            OrderBookSummary(
-                market='0x26ee82bee2493a302d21283cb578f7e2fff2dd15743854f53034d12420863b55', 
-                asset_id='11015470973684177829729219287262166995141465048508201953575582100565462316088', 
-                bids=[OrderSummary(price='0.01', size='600005'), OrderSummary(price='0.02', size='200000'), ...
-                asks=[OrderSummary(price='0.99', size='100000'), OrderSummary(price='0.98', size='200000'), ...
-            )
-    
-    """
-
-    # https://polygon-rpc.com
-
-    test_market_token_id = (
-        "101669189743438912873361127612589311253202068943959811456820079057046819967115"
-    )
-    test_market_data = p.get_market(test_market_token_id)
-
-    # test_size = 0.0001
-    test_size = 1
-    test_side = BUY
-    test_price = float(ast.literal_eval(test_market_data["outcome_prices"])[0])
-
-    # order = p.execute_order(
-    #    test_price,
-    #    test_size,
-    #    test_side,
-    #    test_market_token_id,
-    # )
-
-    # order = p.execute_market_order(test_price, test_market_token_id)
-
-    balance = p.get_usdc_balance()
+    raise NotImplementedError(_TRADING_DISABLED_MSG)

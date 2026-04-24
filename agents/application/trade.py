@@ -1,15 +1,13 @@
-from agents.application.executor import Executor as Agent
-from agents.polymarket.gamma import GammaMarketClient as Gamma
-from agents.polymarket.polymarket import Polymarket
-
+import os
 import shutil
+
+from agents.api_clients import DomesticClient
+from agents.strategies.maker_sniper_strategy import MakerSniperStrategy
 
 
 class Trader:
     def __init__(self):
-        self.polymarket = Polymarket()
-        self.gamma = Gamma()
-        self.agent = Agent()
+        self.client = DomesticClient()
 
     def pre_trade_logic(self) -> None:
         self.clear_local_dbs()
@@ -25,44 +23,13 @@ class Trader:
             pass
 
     def one_best_trade(self) -> None:
-        """
-
-        one_best_trade is a strategy that evaluates all events, markets, and orderbooks
-
-        leverages all available information sources accessible to the autonomous agent
-
-        then executes that trade without any human intervention
-
-        """
-        try:
-            self.pre_trade_logic()
-
-            events = self.polymarket.get_all_tradeable_events()
-            print(f"1. FOUND {len(events)} EVENTS")
-
-            filtered_events = self.agent.filter_events_with_rag(events)
-            print(f"2. FILTERED {len(filtered_events)} EVENTS")
-
-            markets = self.agent.map_filtered_events_to_markets(filtered_events)
-            print()
-            print(f"3. FOUND {len(markets)} MARKETS")
-
-            print()
-            filtered_markets = self.agent.filter_markets(markets)
-            print(f"4. FILTERED {len(filtered_markets)} MARKETS")
-
-            market = filtered_markets[0]
-            best_trade = self.agent.source_best_trade(market)
-            print(f"5. CALCULATED TRADE {best_trade}")
-
-            amount = self.agent.format_trade_prompt_for_execution(best_trade)
-            # Please refer to TOS before uncommenting: polymarket.com/tos
-            # trade = self.polymarket.execute_market_order(market, amount)
-            # print(f"6. TRADED {trade}")
-
-        except Exception as e:
-            print(f"Error {e} \n \n Retrying")
-            self.one_best_trade()
+        """Run one cycle of the maker-sniper strategy against the domestic exchange."""
+        self.pre_trade_logic()
+        symbol = os.getenv("DOMESTIC_SYMBOL", "BTC/JPY")
+        size = float(os.getenv("DOMESTIC_ORDER_SIZE", "0.001"))
+        strategy = MakerSniperStrategy(self.client, symbol=symbol, order_size=size)
+        state = strategy.step()
+        print("step:", state)
 
     def maintain_positions(self):
         pass
