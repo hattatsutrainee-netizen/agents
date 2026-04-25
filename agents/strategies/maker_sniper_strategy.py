@@ -20,10 +20,13 @@ IMPORTANT — post-only flag:
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 
 from agents.api_clients import DomesticClient
+
+logger = logging.getLogger(__name__)
 
 
 class MakerSniperStrategy:
@@ -36,6 +39,9 @@ class MakerSniperStrategy:
         refresh_interval_sec: float = 1.0,
         post_only: bool = True,
         dry_run: bool = False,
+        target_ratio: float | None = None,
+        enable_trailing_stop: bool = False,
+        trailing_stop_atr_multiple: float = 1.5,
     ) -> None:
         self.client = client
         self.symbol = symbol
@@ -44,6 +50,7 @@ class MakerSniperStrategy:
         self.refresh_interval_sec = refresh_interval_sec
         self.post_only = post_only
         self.dry_run = dry_run
+        self.target_ratio = target_ratio
 
         self.open_bid_id: str | None = None
         self.open_ask_id: str | None = None
@@ -52,6 +59,20 @@ class MakerSniperStrategy:
         self.filled_events: list[dict[str, Any]] = []
         self.realized_pnl: float = 0.0
         self._last_buy_price: float | None = None
+
+        # Initialize Portfolio for inventory skewing if target_ratio is set
+        self.portfolio: Any | None = None
+        if target_ratio is not None:
+            from agents.strategies.portfolio import Portfolio
+            self.portfolio = Portfolio(client, symbol, target_ratio=target_ratio)
+
+        # Initialize TrailingStop for dynamic exit control if enabled
+        self.trailing_stop: Any | None = None
+        if enable_trailing_stop:
+            from agents.strategies.trailing_stop import TrailingStop
+            self.trailing_stop = TrailingStop(
+                client, symbol, trailing_atr_multiple=trailing_stop_atr_multiple
+            )
 
     def step(self) -> dict[str, Any]:
         book = self.client.fetch_order_book(self.symbol, limit=5)
@@ -67,6 +88,13 @@ class MakerSniperStrategy:
 
         desired_bid = best_bid + tick * self.tick_offset
         desired_ask = best_ask - tick * self.tick_offset
+
+        # Apply inventory skewing if portfolio is configured
+        if self.portfolio is not None:
+            desired_bid, desired_ask = self._apply_inventory_skew(
+                desired_bid, desired_ask, best_bid, best_ask, tick
+            )
+
         if desired_bid >= desired_ask:
             return {
                 "status": "spread_too_tight",
@@ -75,8 +103,30 @@ class MakerSniperStrategy:
                 "tick": tick,
             }
 
+        # Check trailing stop before posting/cancelling orders
+        if self.trailing_stop is not None:
+            current_unrealized_pnl = self._calculate_unrealized_pnl()
+            stop_level = self.trailing_stop.get_stop_level(current_unrealized_pnl)
+
+            if stop_level is not None and current_unrealized_pnl < stop_level:
+                logger.warning(
+                    "trailing_stop triggered: unrealized=%.2f stop=%.2f",
+                    current_unrealized_pnl, stop_level
+                )
+                self._close_all_positions()
+                return {
+                    "status": "trailing_stop_triggered",
+                    "best_bid": best_bid,
+                    "best_ask": best_ask,
+                    "unrealized_pnl": current_unrealized_pnl,
+                    "stop_level": stop_level,
+                }
+
         open_ids = self._fetch_open_ids()
         self._reconcile_fills(open_ids)
+        # Update trailing stop with most recent filled event
+        if self.trailing_stop is not None and self.filled_events:
+            self.trailing_stop.update_with_filled_event(self.filled_events[-1])
         self._cancel_stale(desired_bid, desired_ask, tick)
         self._repost_missing(desired_bid, desired_ask)
 
@@ -91,6 +141,7 @@ class MakerSniperStrategy:
             "open_ask_id": self.open_ask_id,
             "fills": len(self.filled_events),
             "realized_pnl": self.realized_pnl,
+            "inventory": self.portfolio.get_inventory_info() if self.portfolio else None,
         }
 
     def run(self) -> None:
@@ -180,6 +231,92 @@ class MakerSniperStrategy:
             print(f"[dry_run] cancel {order_id}")
             return
         self.client.cancel_order(order_id, symbol=self.symbol)
+
+    def _apply_inventory_skew(
+        self,
+        desired_bid: float,
+        desired_ask: float,
+        best_bid: float,
+        best_ask: float,
+        tick: float,
+    ) -> tuple[float, float]:
+        """Apply asymmetric spread adjustment based on portfolio inventory.
+
+        Args:
+            desired_bid, desired_ask: Baseline prices (without skew)
+            best_bid, best_ask: Market best bid/ask (for context)
+            tick: Price tick size
+
+        Returns:
+            (skewed_bid, skewed_ask): Adjusted prices, or (desired_bid, desired_ask) on error
+        """
+        try:
+            # Fetch current balance and price
+            balance = self.client.fetch_balance()["total"]
+            ticker = self.client.fetch_ticker(self.symbol)
+            current_price = (ticker["bid"] + ticker["ask"]) / 2.0
+
+            # Calculate current ratio and skew
+            current_ratio = self.portfolio.calculate_ratio(balance, current_price)
+            skew = self.portfolio.get_skew_factor(current_ratio)
+
+            # Apply skew: skew_adjustment = skew * tick_offset * tick
+            skew_adjustment = skew * self.tick_offset * tick
+
+            # Compute skewed prices
+            skewed_bid = desired_bid - skew_adjustment
+            skewed_ask = desired_ask + skew_adjustment
+
+            # Validate: ensure spread doesn't invert
+            if skewed_bid >= skewed_ask:
+                logger.warning(
+                    "skew resulted in inverted spread (bid=%.0f >= ask=%.0f), using baseline",
+                    skewed_bid,
+                    skewed_ask,
+                )
+                return (desired_bid, desired_ask)
+
+            # Log adjustment
+            logger.info(
+                "inventory_skew: ratio=%.3f skew=%.3f bid_adj=%.0f ask_adj=%.0f",
+                current_ratio,
+                skew,
+                skewed_bid - desired_bid,
+                skewed_ask - desired_ask,
+            )
+
+            return (skewed_bid, skewed_ask)
+
+        except Exception as e:
+            logger.error("failed to apply inventory skew: %s", e)
+            return (desired_bid, desired_ask)
+
+    def _calculate_unrealized_pnl(self) -> float:
+        """Calculate current unrealized profit/loss.
+
+        Returns:
+            Unrealized PnL in quote currency. Positive = profit, Negative = loss.
+        """
+        if not self.filled_events or self._last_buy_price is None:
+            return 0.0
+        try:
+            ticker = self.client.fetch_ticker(self.symbol)
+            current_price = (ticker["bid"] + ticker["ask"]) / 2.0
+            return (current_price - self._last_buy_price) * self.order_size
+        except Exception as e:
+            logger.error("failed to calculate unrealized PnL: %s", e)
+            return 0.0
+
+    def _close_all_positions(self) -> None:
+        """Cancel all open orders to close positions."""
+        if self.open_bid_id:
+            self._cancel(self.open_bid_id)
+            self.open_bid_id = None
+            self.open_bid_price = None
+        if self.open_ask_id:
+            self._cancel(self.open_ask_id)
+            self.open_ask_id = None
+            self.open_ask_price = None
 
 
 def _infer_tick(bids: list[list[float]], asks: list[list[float]]) -> float:

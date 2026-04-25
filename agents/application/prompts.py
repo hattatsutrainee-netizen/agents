@@ -145,82 +145,68 @@ class Prompter:
 
     def one_best_trade(
         self,
-        prediction: str,
-        outcomes: List[str],
-        outcome_prices: str,
+        symbol: str,
+        current_price: float,
+        market_context: str,
     ) -> str:
-        return (
-            self.polymarket_analyst_api()
-            + f"""
-        
-                Imagine yourself as the top trader on Polymarket, dominating the world of information markets with your keen insights and strategic acumen. You have an extraordinary ability to analyze and interpret data from diverse sources, turning complex information into profitable trading opportunities.
-                You excel in predicting the outcomes of global events, from political elections to economic developments, using a combination of data analysis and intuition. Your deep understanding of probability and statistics allows you to assess market sentiment and make informed decisions quickly.
-                Every day, you approach Polymarket with a disciplined strategy, identifying undervalued opportunities and managing your portfolio with precision. You are adept at evaluating the credibility of information and filtering out noise, ensuring that your trades are based on reliable data.
-                Your adaptability is your greatest asset, enabling you to thrive in a rapidly changing environment. You leverage cutting-edge technology and tools to gain an edge over other traders, constantly seeking innovative ways to enhance your strategies.
-                In your journey on Polymarket, you are committed to continuous learning, staying informed about the latest trends and developments in various sectors. Your emotional intelligence empowers you to remain composed under pressure, making rational decisions even when the stakes are high.
-                Visualize yourself consistently achieving outstanding returns, earning recognition as the top trader on Polymarket. You inspire others with your success, setting new standards of excellence in the world of information markets.
+        return f"""
+        You are a systematic crypto trader operating on a Japanese exchange.
+        Symbol: {symbol}
+        Current mid price: {current_price} JPY
 
-        """
-            + f"""
-        
-        You made the following prediction for a market: {prediction}
+        Market context:
+        {market_context}
 
-        The current outcomes ${outcomes} prices are: ${outcome_prices}
-
-        Given your prediction, respond with a genius trade in the format:
+        Analyze the context and respond with a trade signal in the format:
         `
-            price:'price_on_the_orderbook',
-            size:'percentage_of_total_funds',
+            price:<limit_price_in_JPY>,
+            size:<order_size_in_BTC>,
             side: BUY or SELL,
         `
 
-        Your trade should approximate price using the likelihood in your prediction.
+        price must be a realistic JPY limit price near the current mid price.
+        size must be a small amount (e.g. 0.001 BTC).
+        Respond with HOLD if no clear edge exists.
 
-        Example response:
+        Example response (BTC/JPY at ~14000000):
 
         RESPONSE```
-            price:0.5,
-            size:0.1,
+            price:14000000,
+            size:0.001,
             side:BUY,
         ```
-        
         """
-        )
 
     def format_price_from_one_best_trade_output(self, output: str) -> str:
         return f"""
-        
-        You will be given an input such as:
-    
+        You will be given a trade signal such as:
+
         `
-            price:0.5,
-            size:0.1,
+            price:14000000,
+            size:0.001,
             side:BUY,
         `
 
-        Please extract only the value associated with price.
-        In this case, you would return "0.5".
+        Please extract only the numeric value associated with price.
+        In this case, you would return "14000000".
 
         Only return the number after price:
-        
         """
 
     def format_size_from_one_best_trade_output(self, output: str) -> str:
         return f"""
-        
-        You will be given an input such as:
-    
+        You will be given a trade signal such as:
+
         `
-            price:0.5,
-            size:0.1,
+            price:14000000,
+            size:0.001,
             side:BUY,
         `
 
-        Please extract only the value associated with price.
-        In this case, you would return "0.1".
+        Please extract only the numeric value associated with size.
+        In this case, you would return "0.001".
 
         Only return the number after size:
-        
         """
 
     def create_new_market(self, filtered_markets: str) -> str:

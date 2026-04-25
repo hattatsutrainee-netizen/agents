@@ -1,0 +1,18 @@
+2026-04-24 19:42:32 INFO     run_bot: ============================================================
+2026-04-24 19:42:32 INFO     run_bot: Bot starting | strategy=maker_sniper dry_run=True interval=1.0s
+2026-04-24 19:42:32 INFO     run_bot: Symbol=BTC/JPY  OrderSize=0.000100 BTC  MaxDailyLoss=5000 JPY
+2026-04-24 19:42:32 INFO     run_bot: Log file: logs/bot_20260424_104232.log
+2026-04-24 19:42:32 INFO     run_bot: ============================================================
+2026-04-24 19:42:32 INFO     run_bot: MakerSniperStrategy started | symbol=BTC/JPY size=0.000100 dry_run=True
+2026-04-24 19:42:32 INFO     run_bot: step=spread_too_tight bid=12429559 ask=12429560 tick=1 fills=0 pnl=0.00 session_pnl=0.00
+2026-04-24 19:42:33 INFO     run_bot: step=spread_too_tight bid=12429559 ask=12429560 tick=1 fills=0 pnl=0.00 session_pnl=0.00
+2026-04-24 19:42:34 INFO     run_bot: step=spread_too_tight bid=12429559 ask=12429560 tick=1 fills=0 pnl=0.00 session_pnl=0.00
+2026-04-24 19:42:35 INFO     run_bot: step=spread_too_tight bid=12429559 ask=12429560 tick=1 fills=0 pnl=0.00 session_pnl=0.00
+2026-04-24 19:42:36 INFO     run_bot: step=spread_too_tight bid=12429559 ask=12429560 tick=1 fills=0 pnl=0.00 session_pnl=0.00
+2026-04-24 19:42:37 INFO     run_bot: step=spread_too_tight bid=12429559 ask=12429560 tick=1 fills=0 pnl=0.00 session_pnl=0.00
+2026-04-24 19:42:38 INFO     run_bot: step=spread_too_tight bid=12429559 ask=12429560 tick=1 fills=0 pnl=0.00 session_pnl=0.00
+2026-04-24 19:42:39 INFO     run_bot: step=spread_too_tight bid=12429559 ask=12429560 tick=1 fills=0 pnl=0.00 session_pnl=0.00
+2026-04-24 19:42:40 INFO     run_bot: step=spread_too_tight bid=12429559 ask=12429560 tick=1 fills=0 pnl=0.00 session_pnl=0.00
+2026-04-24 19:42:41 INFO     run_bot: step=spread_too_tight bid=12429559 ask=12429560 tick=1 fills=0 pnl=0.00 session_pnl=0.00
+2026-04-24 19:42:42 INFO     run_bot: Shutdown signal received (SIGTERM), stopping after current step...
+2026-04-24 19:42:42 INFO     run_bot: Bot stopped | session_pnl=0.00 JPY
